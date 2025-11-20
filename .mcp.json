@@ -1,0 +1,52 @@
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "D:\\work\\try\\HYiot\\work\\INTH\\bldc\\sw\\bldc_cb_test_bd_v101\\bldc_h743_v101"
+      ],
+      "description": "Secure file operations for STM32 project directory"
+    },
+    "git": {
+      "command": "python",
+      "args": [
+        "-m",
+        "mcp_server_git",
+        "--repository",
+        "D:\\work\\try\\HYiot\\work\\INTH\\bldc\\sw\\bldc_cb_test_bd_v101\\bldc_h743_v101"
+      ],
+      "description": "Git repository management and commit history tracking"
+    },
+    "memory": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-memory"
+      ],
+      "description": "Knowledge graph-based persistent memory for context retention"
+    },
+    "sequential-thinking": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-sequential-thinking"
+      ],
+      "description": "Dynamic problem-solving through thought sequences for debugging"
+    },
+    "fetch": {
+      "command": "python",
+      "args": [
+        "-m",
+        "mcp_server_fetch"
+      ],
+      "description": "Fetch STM32 datasheets and reference manuals from web"
+    },
+    "pymupdf4llm": {
+      "command": "pymupdf4llm-mcp",
+      "args": [],
+      "description": "PDF processing and text extraction with PyMuPDF4LLM"
+    }
+  }
+}

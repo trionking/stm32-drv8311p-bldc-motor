@@ -1,0 +1,2 @@
+../Core/Src/ads8638_diag.c:16:9:ADS8638_CheckCommunication	24	static
+../Core/Src/ads8638_diag.c:48:6:ADS8638_DiagnosticTest	48	static

@@ -1,0 +1,10 @@
+../Core/Src/ads8638.c:20:19:ADS8638_Init	48	static
+../Core/Src/ads8638.c:108:19:ADS8638_Reset	24	static
+../Core/Src/ads8638.c:121:19:ADS8638_WriteRegister	24	static
+../Core/Src/ads8638.c:147:19:ADS8638_ReadRegister	32	static
+../Core/Src/ads8638.c:180:19:ADS8638_SetChannelRange	24	static
+../Core/Src/ads8638.c:205:19:ADS8638_ReadChannel	40	static
+../Core/Src/ads8638.c:249:19:ADS8638_ReadAllChannels_AutoScan	48	static
+../Core/Src/ads8638.c:286:19:ADS8638_ReadAllChannels	24	static
+../Core/Src/ads8638.c:306:7:ADS8638_ConvertToVoltage	24	static
+../Core/Src/ads8638.c:344:19:ADS8638_SendCommand	48	static

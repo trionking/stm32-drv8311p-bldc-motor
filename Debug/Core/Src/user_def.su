@@ -1,0 +1,8 @@
+../Core/Src/user_def.c:22:1:__io_putchar	16	static
+../Core/Src/user_def.c:28:6:test_ads8638	120	static
+../Core/Src/user_def.c:163:6:test_internal_adc	24	static
+../Core/Src/user_def.c:191:6:test_motor_run_spi1	48	static
+../Core/Src/user_def.c:298:6:test_motor_run_spi2	48	static
+../Core/Src/user_def.c:368:6:test_motor_tspi_pwmgen_spi1	56	static
+../Core/Src/user_def.c:518:6:init_proc	4	static
+../Core/Src/user_def.c:522:6:run_proc	8	static

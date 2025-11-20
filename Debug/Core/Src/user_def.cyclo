@@ -1,0 +1,8 @@
+../Core/Src/user_def.c:22:1:__io_putchar	1
+../Core/Src/user_def.c:28:6:test_ads8638	14
+../Core/Src/user_def.c:163:6:test_internal_adc	2
+../Core/Src/user_def.c:191:6:test_motor_run_spi1	11
+../Core/Src/user_def.c:298:6:test_motor_run_spi2	4
+../Core/Src/user_def.c:368:6:test_motor_tspi_pwmgen_spi1	13
+../Core/Src/user_def.c:518:6:init_proc	1
+../Core/Src/user_def.c:522:6:run_proc	1
