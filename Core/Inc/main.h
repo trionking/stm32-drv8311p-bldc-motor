@@ -61,6 +61,8 @@ void Error_Handler(void);
 /* Private defines -----------------------------------------------------------*/
 #define OT_LD1_Pin GPIO_PIN_1
 #define OT_LD1_GPIO_Port GPIOD
+#define DRV_NSLEEP_Pin GPIO_PIN_1
+#define DRV_NSLEEP_GPIO_Port GPIOD
 #define OT_LD2_Pin GPIO_PIN_9
 #define OT_LD2_GPIO_Port GPIOC
 #define OT_SPI3_NCS2_Pin GPIO_PIN_10

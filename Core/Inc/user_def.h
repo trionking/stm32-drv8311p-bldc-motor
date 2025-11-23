@@ -7,24 +7,14 @@
 void run_proc(void);
 void init_proc(void);
 
-// Original Test Functions
-void test_uart2(void);
-void test_adc(void);
-void test_spi_raw(void);
+// Hardware Test Functions (Non-DRV8311)
 void test_ads8638(void);
-void test_spi4_loopback(void);
-void test_spi4_pins(void);
-void test_drv8311(void);
-void test_drv8311_pwm_only(void);
-void test_spi1_pins(void);
-void test_spi1_basic(void);
-void test_dual_drv8311(void);
+void test_internal_adc(void);
 
-// Added Test Functions
-void test_spi2_basic(void);
-void test_pe15_toggle(void);
-void test_nsleep_toggle(void);
-void test_motor_run_spi2(void);
-void test_motor_tspi_pwmgen_spi1(void);
+// DRV8311 Motor Control Functions
+void test_drv8311_chip_health_check(void);     // Chip health diagnostic (no motor required)
+void test_motor_tspi_pwmgen_spi1(void);        // Progressive duty ramping test (Phase A only)
+void test_drv8311_output_voltage(void);        // Output voltage measurement (no motor required)
+void test_motor_1phase_excitation(void);       // 1-Phase excitation motor rotation
 
 #endif /* __USER_DEF_H */

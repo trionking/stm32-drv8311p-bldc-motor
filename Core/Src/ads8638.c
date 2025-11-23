@@ -19,82 +19,77 @@
   */
 HAL_StatusTypeDef ADS8638_Init(ADS8638_HandleTypeDef *hadc, SPI_HandleTypeDef *hspi)
 {
-    HAL_StatusTypeDef status;
-
     if (hadc == NULL || hspi == NULL) {
         return HAL_ERROR;
     }
 
     hadc->hspi = hspi;
 
-    // Enhanced power-up sequence for ADS8638
-    // Step 0: Enable AL_PD (Analog Power-Down) - CRITICAL!
-    // AL_PD must be HIGH for normal operation
-    ADS8638_ALPD_ENABLE();
-    HAL_Delay(50);  // Wait for analog power-up
+    // Simplified power-up sequence per datasheet
+    // Note: AL_PD pin has internal weak pull-up to DVDD (can be left floating)
 
     // Step 1: Ensure CS is HIGH during power-up (critical!)
     ADS8638_CS_HIGH();
-    HAL_Delay(200);  // Extended power stabilization time
+    HAL_Delay(10);  // Power stabilization
 
-    // Step 2: Hardware reset by CS toggling (slow and deliberate)
+    // Step 2: Send first dummy transaction to initiate power-up
+    // Per datasheet: "Power-up delay from first CS after power-up command: 1µs"
     uint16_t response;
-    for (int i = 0; i < 8; i++) {
-        ADS8638_CS_LOW();
-        HAL_Delay(20);
-        ADS8638_CS_HIGH();
-        HAL_Delay(20);
-    }
+    ADS8638_SendCommand(hadc, ADS8638_CMD_NO_OP, &response);
+    HAL_Delay(1);  // Wait for device to power up
 
-    HAL_Delay(100);  // Additional stabilization
+    // Step 3: Software reset via register write (per datasheet Table 11)
+    // Reset-Device Register (0x01), write 0x01 to reset
+    ADS8638_WriteRegister(hadc, ADS8638_REG_RESET_DEVICE, 0x01);
+    HAL_Delay(10);  // Wait for reset to complete
 
-    // Step 3: Software reset sequence
-    for (int i = 0; i < 16; i++) {
-        status = ADS8638_SendCommand(hadc, ADS8638_CMD_RST, &response);
-        HAL_Delay(15);  // Longer delay between resets
-    }
+    // Step 4: Send NOP to clear any invalid data
+    ADS8638_SendCommand(hadc, ADS8638_CMD_NO_OP, &response);
+    HAL_Delay(1);
 
-    HAL_Delay(100);  // Wait for reset to complete
+    // Step 5: Configure Aux-Config Register (0x06)
+    // CRITICAL:
+    // - Bit 3 = 1: AL_PD as power-down control input (default, can float with internal pull-up)
+    // - Bit 2 = 1: Enable internal 2.5V reference
+    // - Bit 1 = 0: Temp Sensor disabled
+    // NOTE: AL_PD pin has internal weak pull-up to DVDD, can be left floating
+    // Register default = 0x08 (AL_PD control enabled), we add VREF enable
+    uint8_t aux_config = ADS8638_AUX_AL_PD_AS_PWRDN | ADS8638_AUX_INT_VREF_ENABLE;  // 0x08 | 0x04 = 0x0C
+    ADS8638_WriteRegister(hadc, ADS8638_REG_AUX_CONFIG, aux_config);
 
-    // Step 4: Wake up from power-down with NOP commands
-    for (int i = 0; i < 10; i++) {
-        ADS8638_SendCommand(hadc, ADS8638_CMD_NO_OP, &response);
-        HAL_Delay(10);
-    }
+    // Per datasheet: "Internal reference block is powered up at the NEXT frame"
+    // Send a dummy transaction to trigger the next frame
+    ADS8638_SendCommand(hadc, ADS8638_CMD_NO_OP, &response);
 
-    // Step 5: Configure Feature Select Register
-    // CRITICAL: Enable internal reference (INTREF_DIS=0)
-    for (int i = 0; i < 8; i++) {
-        ADS8638_WriteRegister(hadc, ADS8638_REG_FEATURE_SEL, 0x00);  // Internal REF enabled
-        HAL_Delay(20);
-        ADS8638_SendCommand(hadc, ADS8638_CMD_NO_OP, &response);
-        HAL_Delay(10);
-    }
+    // Wait for internal reference to settle (datasheet: 9ms with 10µF cap)
+    HAL_Delay(15);  // Settling time for internal reference
 
-    // Step 6: Configure Auto-Sequence mode
-    // Retry multiple times to ensure register write succeeds
-    for (int i = 0; i < 8; i++) {
-        ADS8638_WriteRegister(hadc, ADS8638_REG_AUTO_SEQ_EN, 0xFF);  // Enable all channels
-        HAL_Delay(20);
-        ADS8638_SendCommand(hadc, ADS8638_CMD_NO_OP, &response);
-        HAL_Delay(10);
-    }
+    // Step 6: Configure Auto-Mode Channel Selection (0x0C)
+    // Enable all 8 channels for auto-scan sequence
+    // Bit 7-0: Sel Ch7, Ch6, Ch5, Ch4, Ch3, Ch2, Ch1, Ch0
+    ADS8638_WriteRegister(hadc, ADS8638_REG_AUTO_CH_SEL, 0xFF);  // All channels enabled
+    HAL_Delay(1);
 
-    // Step 7: Set default range configuration and write to registers
+    // Step 7: Set default range configuration
+    // Range registers: 2 channels per register (0x10-0x13)
+    // IMPORTANT: With HVDD=5V, use 0-5V range (not 0-10V which requires HVDD=10-15V!)
     for (uint8_t ch = 0; ch < 8; ch++) {
-        hadc->range_config[ch] = ADS8638_RANGE_3xVREF;  // 7.5V max (for HVDD=5V)
+        hadc->range_config[ch] = ADS8638_RANGE_UNIPOLAR_5V;  // 0-5V (for HVDD=5V)
         hadc->adc_data[ch] = 0;
         hadc->voltage[ch] = 0.0f;
-
-        // CRITICAL: Actually write range to ADS8638 registers!
-        ADS8638_WriteRegister(hadc, ADS8638_REG_CH0_RANGE + ch, ADS8638_RANGE_3xVREF);
-        HAL_Delay(10);
     }
 
-    // Step 8: Prime the Auto-Scan sequence with NOP commands
-    for (int i = 0; i < 32; i++) {
+    // Write range to registers (CH0-1: 0x10, CH2-3: 0x11, CH4-5: 0x12, CH6-7: 0x13)
+    // Each register: bits[6:4] = even channel, bits[2:0] = odd channel
+    uint8_t range_val = (ADS8638_RANGE_UNIPOLAR_5V << 4) | ADS8638_RANGE_UNIPOLAR_5V;
+    for (uint8_t reg = 0; reg < 4; reg++) {
+        ADS8638_WriteRegister(hadc, ADS8638_REG_CH0_1_RANGE + reg, range_val);
+        HAL_Delay(1);
+    }
+
+    // Step 8: Prime the Auto-Scan sequence with a few NOP commands
+    for (int i = 0; i < 8; i++) {
         ADS8638_SendCommand(hadc, ADS8638_CMD_NO_OP, &response);
-        HAL_Delay(5);
     }
 
     return HAL_OK;
@@ -150,20 +145,16 @@ HAL_StatusTypeDef ADS8638_ReadRegister(ADS8638_HandleTypeDef *hadc, uint8_t reg_
     uint16_t cmd;
     uint16_t response;
 
-    // Use Read Register command: 0xC800 | (addr << 7)
+    // Per datasheet Table 10: Read Cycle Command Word
+    // DIN: bits[15:9]=address, bit[8]=1 (read), bits[7:0]=don't care
+    // DOUT: bits[15:8]=don't care, bits[7:0]=register data (SAME FRAME!)
     cmd = ADS8638_READ_REG(reg_addr);
 
-    // First: Send read register command
+    // Send read register command - data returned in SAME frame bits[7:0]
     status = ADS8638_SendCommand(hadc, cmd, &response);
-    if (status != HAL_OK) {
-        return status;
-    }
-
-    // Second: Send NOP to get the register data
-    status = ADS8638_SendCommand(hadc, ADS8638_CMD_NO_OP, &response);
 
     if (status == HAL_OK) {
-        // Register data is in lower 8 bits
+        // Register data is in lower 8 bits of the SAME frame response
         *value = response & 0xFF;
     }
 
@@ -176,21 +167,43 @@ HAL_StatusTypeDef ADS8638_ReadRegister(ADS8638_HandleTypeDef *hadc, uint8_t reg_
   * @param  channel: Channel number (0-7)
   * @param  range: Range setting (see ADS8638_RANGE_xxx defines)
   * @retval HAL status
+  * @note   Range registers contain 2 channels each:
+  *         - 0x10: CH0 (bits[6:4]), CH1 (bits[2:0])
+  *         - 0x11: CH2 (bits[6:4]), CH3 (bits[2:0])
+  *         - 0x12: CH4 (bits[6:4]), CH5 (bits[2:0])
+  *         - 0x13: CH6 (bits[6:4]), CH7 (bits[2:0])
   */
 HAL_StatusTypeDef ADS8638_SetChannelRange(ADS8638_HandleTypeDef *hadc, uint8_t channel, uint8_t range)
 {
     HAL_StatusTypeDef status;
 
-    if (channel > 7) {
+    if (channel > 7 || range > 7) {
         return HAL_ERROR;
     }
 
-    // Write to channel range register
-    status = ADS8638_WriteRegister(hadc, ADS8638_REG_CH0_RANGE + channel, range);
+    // Update local configuration
+    hadc->range_config[channel] = range;
 
-    if (status == HAL_OK) {
-        hadc->range_config[channel] = range;
+    // Determine which register to write (CH0-1: 0x10, CH2-3: 0x11, etc.)
+    uint8_t reg_addr = ADS8638_REG_CH0_1_RANGE + (channel / 2);
+
+    // Get the pair channel number
+    uint8_t pair_channel = (channel % 2 == 0) ? (channel + 1) : (channel - 1);
+    uint8_t pair_range = hadc->range_config[pair_channel];
+
+    // Construct register value
+    // Even channel (0,2,4,6) goes to bits[6:4], Odd channel (1,3,5,7) to bits[2:0]
+    uint8_t reg_value;
+    if (channel % 2 == 0) {
+        // Even channel: this channel in upper bits, pair in lower bits
+        reg_value = (range << 4) | (pair_range & 0x07);
+    } else {
+        // Odd channel: pair in upper bits, this channel in lower bits
+        reg_value = (pair_range << 4) | (range & 0x07);
     }
+
+    // Write to register
+    status = ADS8638_WriteRegister(hadc, reg_addr, reg_value);
 
     return status;
 }
@@ -299,39 +312,54 @@ HAL_StatusTypeDef ADS8638_ReadAllChannels(ADS8638_HandleTypeDef *hadc)
 
 /**
   * @brief  Convert ADC raw value to voltage
-  * @param  adc_value: 12-bit ADC value
+  * @param  adc_value: 12-bit ADC value (0-4095)
   * @param  range_config: Range configuration for the channel
   * @retval Voltage in volts
+  * @note   Per datasheet:
+  *         - Bipolar ranges (±10V, ±5V, ±2.5V): 0=min, 2048=0V, 4095=max
+  *         - Unipolar ranges (0-10V, 0-5V): 0=0V, 4095=max
   */
 float ADS8638_ConvertToVoltage(uint16_t adc_value, uint8_t range_config)
 {
-    float vref = 2.5f;  // Internal reference voltage
-    float range_multiplier;
+    float voltage = 0.0f;
 
-    // Determine range multiplier
+    // Mask to 12-bit value
+    adc_value &= 0x0FFF;
+
     switch (range_config) {
-        case ADS8638_RANGE_3xVREF:
-            range_multiplier = 3.0f;
+        case ADS8638_RANGE_BIPOLAR_10V:  // ± 10V
+            // ADC 0 = -10V, 2048 = 0V, 4095 = +10V
+            voltage = ((float)adc_value / 4096.0f) * 20.0f - 10.0f;
             break;
-        case ADS8638_RANGE_2p5xVREF:
-            range_multiplier = 2.5f;
+
+        case ADS8638_RANGE_BIPOLAR_5V:   // ± 5V
+            // ADC 0 = -5V, 2048 = 0V, 4095 = +5V
+            voltage = ((float)adc_value / 4096.0f) * 10.0f - 5.0f;
             break;
-        case ADS8638_RANGE_1p5xVREF:
-            range_multiplier = 1.5f;
+
+        case ADS8638_RANGE_BIPOLAR_2P5V: // ± 2.5V
+            // ADC 0 = -2.5V, 2048 = 0V, 4095 = +2.5V
+            voltage = ((float)adc_value / 4096.0f) * 5.0f - 2.5f;
             break;
-        case ADS8638_RANGE_1p25xVREF:
-            range_multiplier = 1.25f;
+
+        case ADS8638_RANGE_UNIPOLAR_10V: // 0 to 10V
+            // ADC 0 = 0V, 4095 = 10V
+            voltage = ((float)adc_value / 4096.0f) * 10.0f;
             break;
-        case ADS8638_RANGE_0p625xVREF:
-            range_multiplier = 0.625f;
+
+        case ADS8638_RANGE_UNIPOLAR_5V:  // 0 to 5V
+            // ADC 0 = 0V, 4095 = 5V
+            voltage = ((float)adc_value / 4096.0f) * 5.0f;
             break;
+
+        case ADS8638_RANGE_AS_PROGRAMMED:
         default:
-            range_multiplier = 1.5f;
+            // Default to unipolar 0-10V if range is unknown
+            voltage = ((float)adc_value / 4096.0f) * 10.0f;
             break;
     }
 
-    // Calculate voltage: ADC_value / 4096 * (range_multiplier * Vref)
-    return ((float)adc_value / 4096.0f) * (range_multiplier * vref);
+    return voltage;
 }
 
 /**

@@ -16,12 +16,11 @@ extern "C" {
 #include "main.h"
 #include <stdint.h>
 
-/* ADS8638 Command Definitions */
+/* ADS8638 Command Definitions - NO_OP keeps device in current mode */
 #define ADS8638_CMD_NO_OP               0x0000
-#define ADS8638_CMD_STDBY               0x8200
-#define ADS8638_CMD_PWR_DN              0x8300
-#define ADS8638_CMD_RST                 0x8500
-#define ADS8638_CMD_AUTO_RST            0xA000
+#define ADS8638_CMD_RST                 0x8500  // Software reset (legacy, use WriteRegister to 0x01 instead)
+
+/* Manual Channel Select Commands (for ReadChannel function) */
 #define ADS8638_CMD_MAN_CH0             0xC000
 #define ADS8638_CMD_MAN_CH1             0xC400
 #define ADS8638_CMD_MAN_CH2             0xC800
@@ -30,51 +29,56 @@ extern "C" {
 #define ADS8638_CMD_MAN_CH5             0xD400
 #define ADS8638_CMD_MAN_CH6             0xD800
 #define ADS8638_CMD_MAN_CH7             0xDC00
-#define ADS8638_CMD_MAN_AUX             0xE000
 
-/* Program Register Command - Bit pattern: 1101 AAAAAA DDDDDDDD (16 bits) */
-/*   Bit 15-14: 11 (Write command)
-     Bit 13-12: 01 (Program Register)
-     Bit 11-8:  Address high nibble (upper 4 bits of 6-bit address)
-     Bit 7-0:   Data byte */
-#define ADS8638_PROG_REG(addr, data)    (0xD000 | (((addr) & 0x3F) << 8) | ((data) & 0xFF))
+/* ADS8638 Register Addresses (Page 0) - Per Datasheet Table 11 */
+#define ADS8638_REG_RESET_DEVICE        0x01  // Device Reset Register
+#define ADS8638_REG_MANUAL_MODE         0x04  // Manual Channel Select Mode
+#define ADS8638_REG_AUTO_MODE           0x05  // Auto-Scan Mode
+#define ADS8638_REG_AUX_CONFIG          0x06  // Auxiliary Config (VREF, Temp Sensor, AL_PD)
+#define ADS8638_REG_AUTO_CH_SEL         0x0C  // Auto-Mode Channel Selection
+#define ADS8638_REG_CH0_1_RANGE         0x10  // Channel 0-1 Range (CH0: bits[6:4], CH1: bits[2:0])
+#define ADS8638_REG_CH2_3_RANGE         0x11  // Channel 2-3 Range (CH2: bits[6:4], CH3: bits[2:0])
+#define ADS8638_REG_CH4_5_RANGE         0x12  // Channel 4-5 Range (CH4: bits[6:4], CH5: bits[2:0])
+#define ADS8638_REG_CH6_7_RANGE         0x13  // Channel 6-7 Range (CH6: bits[6:4], CH7: bits[2:0])
 
-/* Read Register Command - Bit pattern: 11 00 1 A5-A0 X */
-#define ADS8638_READ_REG(addr)          (0xC800 | (((addr) & 0x3F) << 7))
+/* Legacy register names for backwards compatibility with test code */
+#define ADS8638_REG_FEATURE_SEL         ADS8638_REG_AUX_CONFIG    // Alias: Feature Select -> Aux Config
+#define ADS8638_REG_AUTO_SEQ_EN         ADS8638_REG_AUTO_CH_SEL   // Alias: Auto Seq Enable -> Auto Ch Sel
 
-/* ADS8638 Register Addresses */
-#define ADS8638_REG_AUTO_SEQ_EN         0x01  // Auto Sequence Enable
-#define ADS8638_REG_CH_PWR_DN           0x02  // Channel Power Down
-#define ADS8638_REG_FEATURE_SEL         0x03  // Feature Select
-#define ADS8638_REG_CH0_RANGE           0x05  // Channel 0 Input Range
-#define ADS8638_REG_CH1_RANGE           0x06  // Channel 1 Input Range
-#define ADS8638_REG_CH2_RANGE           0x07  // Channel 2 Input Range
-#define ADS8638_REG_CH3_RANGE           0x08  // Channel 3 Input Range
-#define ADS8638_REG_CH4_RANGE           0x09  // Channel 4 Input Range
-#define ADS8638_REG_CH5_RANGE           0x0A  // Channel 5 Input Range
-#define ADS8638_REG_CH6_RANGE           0x0B  // Channel 6 Input Range
-#define ADS8638_REG_CH7_RANGE           0x0C  // Channel 7 Input Range
+/* Program Register Command - Bit pattern: Bits[15:9]=Address, Bit[8]=R/W, Bits[7:0]=Data */
+#define ADS8638_PROG_REG(addr, data)    ((((addr) & 0x7F) << 9) | (0x00 << 8) | ((data) & 0xFF))
 
-/* Input Range Settings (for 2.5V internal reference) */
-#define ADS8638_RANGE_3xVREF    0x00  // 0 to 7.5V (3 x 2.5V)
-#define ADS8638_RANGE_2p5xVREF  0x01  // 0 to 6.25V (2.5 x 2.5V)
-#define ADS8638_RANGE_1p5xVREF  0x02  // 0 to 3.75V (1.5 x 2.5V)
-#define ADS8638_RANGE_1p25xVREF 0x03  // 0 to 3.125V (1.25 x 2.5V)
-#define ADS8638_RANGE_0p625xVREF 0x05 // 0 to 1.5625V (0.625 x 2.5V)
+/* Read Register Command - Bit pattern: Bits[15:9]=Address, Bit[8]=R/W */
+#define ADS8638_READ_REG(addr)          ((((addr) & 0x7F) << 9) | (0x01 << 8))
+
+/* Input Range Settings - Per Datasheet Register Definitions */
+/* Range Select[2:0] - Used in Manual/Auto mode registers and Ch Range registers */
+#define ADS8638_RANGE_AS_PROGRAMMED     0x00  // Use range from configuration registers (0x10-0x13)
+#define ADS8638_RANGE_BIPOLAR_10V       0x01  // ± 10V (requires 2.5V VREF)
+#define ADS8638_RANGE_BIPOLAR_5V        0x02  // ± 5V
+#define ADS8638_RANGE_BIPOLAR_2P5V      0x03  // ± 2.5V
+// 0x04 Reserved
+#define ADS8638_RANGE_UNIPOLAR_10V      0x05  // 0 to 10V
+#define ADS8638_RANGE_UNIPOLAR_5V       0x06  // 0 to 5V
+#define ADS8638_RANGE_POWERDOWN         0x07  // Powers down device
+
+/* Aux-Config Register (0x06) Bit Definitions */
+#define ADS8638_AUX_AL_PD_AS_ALARM      0x00  // AL_PD pin = Alarm output
+#define ADS8638_AUX_AL_PD_AS_PWRDN      0x08  // AL_PD pin = Power-down control (Bit 3)
+#define ADS8638_AUX_INT_VREF_ENABLE     0x04  // Enable internal 2.5V reference (Bit 2)
+#define ADS8638_AUX_TEMP_SENSOR_ENABLE  0x02  // Enable temperature sensor (Bit 1)
+
+/* Manual/Auto Mode Register - Channel Select (bits[6:4] for Manual mode) */
+#define ADS8638_CH_SELECT(ch)           (((ch) & 0x07) << 4)  // Channel 0-7
+#define ADS8638_SEL_TEMP_SENSOR         0x01  // Select temperature sensor (Bit 0)
 
 /* GPIO Pin Definitions */
 #define ADS8638_CS_PIN          GPIO_PIN_1   // PD1 -> SPI4_NCS
 #define ADS8638_CS_PORT         GPIOD
-#define ADS8638_ALPD_PIN        GPIO_PIN_9   // PC9 -> AL_PD (Analog Power-Down)
-#define ADS8638_ALPD_PORT       GPIOC
 
 /* Macro for CS control */
 #define ADS8638_CS_LOW()        HAL_GPIO_WritePin(ADS8638_CS_PORT, ADS8638_CS_PIN, GPIO_PIN_RESET)
 #define ADS8638_CS_HIGH()       HAL_GPIO_WritePin(ADS8638_CS_PORT, ADS8638_CS_PIN, GPIO_PIN_SET)
-
-/* Macro for AL_PD control */
-#define ADS8638_ALPD_ENABLE()   HAL_GPIO_WritePin(ADS8638_ALPD_PORT, ADS8638_ALPD_PIN, GPIO_PIN_SET)
-#define ADS8638_ALPD_DISABLE()  HAL_GPIO_WritePin(ADS8638_ALPD_PORT, ADS8638_ALPD_PIN, GPIO_PIN_RESET)
 
 /* ADS8638 Structure */
 typedef struct {

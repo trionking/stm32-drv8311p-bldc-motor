@@ -1,1 +1,27 @@
-nul
+# Build outputs
+Debug/
+Release/
+
+# Object files
+*.o
+*.elf
+*.bin
+*.hex
+*.map
+*.list
+*.su
+*.cyclo
+
+# IDE files
+.settings/
+.cproject
+.project
+*.launch
+
+# MCP config (local)
+.mcp.json
+
+# Temporary files
+*.tmp
+*.bak
+*~
